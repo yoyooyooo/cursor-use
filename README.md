@@ -4,7 +4,7 @@
 
 A Bun CLI and Agent skill for Cursor Cloud Agents. It provides recoverable task dispatch, Run tracking, SSE streaming, usage and artifact inspection through the official v1 API.
 
-> The public repository URL and package metadata are prepared for `yoyooyooo/cursor-use`. The remote repository and npm publication still require an explicit owner-side release action.
+> The first npm version must be published from a logged-in local session. After that, later versions use GitHub Actions trusted publishing.
 
 ## Scope
 

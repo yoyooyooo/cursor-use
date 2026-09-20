@@ -2,13 +2,9 @@
 
 ## Source repository
 
-The canonical repository is intended to be:
+The canonical repository is:
 
 <https://github.com/yoyooyooo/cursor-use>
-
-The repository owner must create the remote, push the first fast-forward history,
-and enable branch protection and private vulnerability reporting before making
-public release claims. This workspace does not create the remote or push code.
 
 ## Versioning
 
@@ -26,24 +22,34 @@ state databases and research notes are not package contents.
 `prepack` expands workspace `catalog:` references to exact versions, then rebuilds
 `dist/main.js`. `postpack` restores the source `package.json`. `bun run package:check`
 runs the full local quality gate, packs to a temporary directory, asserts the
-file allowlist and exact versions, and checks the built CLI version. The GitHub
-tag workflow creates a package artifact but does not publish to npm automatically.
+file allowlist and exact versions, and checks the built CLI version.
 
-## Manual publication
+## First publish and trusted publishing
 
-After the repository is public and the package has passed the release checks:
+npm Trusted Publishing can only be configured after the package exists on the
+registry. Do not publish a dummy `0.0.0`. The first version is the real `0.2.1`.
 
-```sh
-bun pm whoami
-bun run check
-bun pm pack --dry-run
-bun publish --access public
-```
+1. Log in locally with an interactive npm session that can complete 2FA:
+   `npm login`
+2. Publish once from this repository:
+   `bun run package:check && npm publish --access public`
+3. On <https://www.npmjs.com/package/cursor-use/access>, add a GitHub Actions
+   trusted publisher:
+   - Organization or user: `yoyooyooo`
+   - Repository: `cursor-use`
+   - Workflow filename: `release.yml`
+   - Environment: leave empty
+   - Allowed actions: `npm publish`
+4. Later versions are published by pushing a matching tag, for example `v0.2.2`.
+   The tag workflow uses OIDC. Do not store an npm token in GitHub Actions.
 
-Publication requires an owner-authorized npm session. Never put an npm token in
-this repository, GitHub Actions logs, an issue, or a prompt. After publication,
-verify the exact version from a clean temporary consumer and record the package
-URL and checksum in the release notes.
+`bun publish` is not the trusted-publishing path. CI packs with Bun, then
+publishes the tarball with `npm publish` so npm can complete the OIDC exchange
+and provenance.
+
+Never put an npm token in this repository, GitHub Actions logs, an issue, or a
+prompt. After publication, verify the exact version from a clean temporary
+consumer and record the package URL.
 
 ## Release claims
 
