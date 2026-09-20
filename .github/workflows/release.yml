@@ -28,6 +28,6 @@ jobs:
       - run: bun run check
       - run: mkdir -p release
       - run: bun pm pack --destination release
-      - run: npm publish release/*.tgz --access public
+      - run: npm publish ./release/*.tgz --access public
         env:
           NODE_AUTH_TOKEN: ""
