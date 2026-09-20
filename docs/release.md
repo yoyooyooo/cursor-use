@@ -29,23 +29,21 @@ file allowlist and exact versions, and checks the built CLI version.
 npm Trusted Publishing can only be configured after the package exists on the
 registry. Do not publish a dummy `0.0.0`. The first version is the real `0.2.1`.
 
-1. Log in locally with an interactive npm session that can complete 2FA:
-   `npm login`
-2. Publish once from this repository:
-   `bun run package:check && npm publish --access public`
-3. On <https://www.npmjs.com/package/cursor-use/access>, add a GitHub Actions
-   trusted publisher:
+1. `0.2.1` was the bootstrap publish from a local npm web-auth session. That
+   directory `npm publish` packed `catalog:` into the registry manifest.
+2. Trusted Publisher is configured on
+   <https://www.npmjs.com/package/cursor-use/access>:
    - Organization or user: `yoyooyooo`
    - Repository: `cursor-use`
    - Workflow filename: `release.yml`
-   - Environment: leave empty
+   - Environment: empty
    - Allowed actions: `npm publish`
-4. Later versions are published by pushing a matching tag, for example `v0.2.2`.
-   The tag workflow uses OIDC. Do not store an npm token in GitHub Actions.
+3. Later versions are published by pushing a matching tag, for example `v0.2.2`.
+   The tag workflow packs with Bun, then publishes the tarball with `npm publish`.
+   Do not store an npm token in GitHub Actions. Do not run directory
+   `npm publish` for later versions.
 
-`bun publish` is not the trusted-publishing path. CI packs with Bun, then
-publishes the tarball with `npm publish` so npm can complete the OIDC exchange
-and provenance.
+`bun publish` is not the trusted-publishing path.
 
 Never put an npm token in this repository, GitHub Actions logs, an issue, or a
 prompt. After publication, verify the exact version from a clean temporary

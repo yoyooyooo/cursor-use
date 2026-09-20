@@ -37,3 +37,10 @@ bun run package:check
 ## Pull request
 
 请使用仓库的 Pull Request 模板。维护者会检查测试、文档入口、敏感信息扫描、包清单和公共契约是否同步。合并由仓库维护者根据 CI 和审查结果决定。
+
+## 相关文件
+
+- [行为准则](CODE_OF_CONDUCT.md)
+- [维护者指南](AGENTS.md)
+- [发布策略](docs/release.md)
+- [第三方许可证](THIRD_PARTY_NOTICES.md)

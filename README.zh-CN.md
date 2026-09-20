@@ -1,42 +1,10 @@
 # cursor-use
 
-`cursor-use` 是一个 Bun CLI 和 Agent skill，用于通过官方 Cursor Cloud Agents API 派发、跟进和恢复云端任务。
+[English](./README.md) | [中文](./README.zh-CN.md)
 
-首个 npm 版本必须从已登录的本地会话发布。之后的版本通过 GitHub Actions Trusted Publishing 发布。
+[![CI](https://github.com/yoyooyooo/cursor-use/actions/workflows/check.yml/badge.svg)](https://github.com/yoyooyooo/cursor-use/actions/workflows/check.yml)
 
-## 当前范围
-
-- 官方 Cloud Agents API v1
-- Agent/Run 创建、查询、等待、取消和续派
-- SQLite 回执、固定 request ID 和未知结果恢复
-- SSE 事件流、有限重连和事件续读
-- 用量、产物和有界资源观察
-- 安全产物下载、主机白名单和 SHA-256 校验
-- 外部 Agent skill
-
-当前不支持原生 Projects 管理、完整环境目录、envVars beta、桌面 CDP、`cursor-agent` 互通或自动合并。仓库中的历史实验记录不代表当前产品能力。
-
-## 要求
-
-- Bun `1.4.2` 或更高版本
-- Cursor Cloud Agents API 访问权限
-- 远端操作时由调用进程提供 `CURSOR_API_KEY`
-
-本地开发和打包已在 macOS、Bun `1.4.2` 上验证。CI 覆盖 Ubuntu 和 macOS。Windows 不是已验证平台。
-
-CLI 不会读取 Cursor 桌面登录态，也不会把 API Key 写入配置、回执、prompt 或日志。
-
-## 从源码安装
-
-```sh
-bun install --frozen-lockfile
-bun run package:check
-bun link
-cursor-use --version
-cursor-use capabilities --json
-```
-
-先用不访问远端的 dry-run 验证输入和构建产物：
+给 Cursor Cloud Agents 用的 CLI。你可以自己跑，也可以交给另一个 Coding Agent。它派发云端任务，留下能找回的回执，跟进 Run，再用官方 v1 API 读用量和产物。
 
 ```sh
 cursor-use agents launch \
@@ -47,7 +15,64 @@ cursor-use agents launch \
   --json
 ```
 
-真实远端操作前，在调用 CLI 的进程中设置凭据：
+这条 dry-run 只在本机跑，不读 Key，也不打到云端。
+
+## 解决的问题
+
+Cursor Cloud Agents 已经在云端跑。终端这边还缺一套办法：
+
+- 选一个真实目标
+- 一次提交配一个能找回的 request ID
+- 离开后再回到同一个 Agent 和 Run
+- 分清「CLI 调用成功」和「任务跑完且验收通过」
+
+`cursor-use` 做的就是这些。桌面 Cursor 和 `cursor-agent` 不在范围内，见「限制」。
+
+## 主要能力
+
+- 创建、续派、等待、取消、查结果
+- 本地 SQLite 回执，提交结果不明时也能恢复
+- SSE 事件流，断线后有限次重连
+- 用量、产物列表，以及按大小和 SHA-256 校验的下载
+- 一份 skill，告诉外部 Agent 怎么调用这套 CLI
+
+## 工作原理
+
+1. 给 CLI 一段 prompt，并只选一个目标：`--env`、`--repo`、`--repos-file` 或 `--scratch`。
+2. 付费提交时，CLI 先写本地回执，再请求 `https://api.cursor.com`。
+3. 这个 request ID 可以查询、回查或复用。响应丢了，不会当成新任务再发。
+4. 后续命令用已保存的 `agentId` 和 `runId`。本地等待或订阅流，都不会取消云端 Run。
+
+CLI 从调用进程的环境变量读 API Key。它不会把 Key 写进配置、回执库、prompt 或日志。
+
+## 安装
+
+需要 [Bun](https://bun.sh) `1.4.2` 或更高版本。
+
+```sh
+bun install -g cursor-use
+cursor-use --version
+cursor-use capabilities --json
+```
+
+请安装 `0.2.2` 或更高版本。`0.2.1` 的依赖仍是 workspace `catalog:`，装不上。
+
+从源码安装：
+
+```sh
+git clone https://github.com/yoyooyooo/cursor-use.git
+cd cursor-use
+bun install --frozen-lockfile
+bun run build
+bun link
+cursor-use --version
+```
+
+已在 macOS、Bun `1.4.2` 上验证。CI 覆盖 Ubuntu 和 macOS。Windows 尚未验证。
+
+## 快速开始
+
+上面的 dry-run 过后，远端命令要在同一进程里提供 Cursor API Key：
 
 ```sh
 export CURSOR_API_KEY="..."
@@ -55,28 +80,66 @@ cursor-use doctor --json
 cursor-use models --json
 ```
 
-真实创建任务会产生服务费用。每次逻辑提交使用固定 request ID，提交前会写入本地回执；响应不明确时先恢复，不要生成新 ID 重试。
+创建 Agent 可能产生 Cursor 用量费用。每个逻辑提交用一个 request ID。结果不清楚时，先看回执再回查，不要换新 ID 重发。
 
-## 用户配置
+```sh
+cursor-use agents launch \
+  --scratch \
+  --prompt "Return a short readiness summary." \
+  --request-id my-task-001 \
+  --json
+cursor-use receipts show --request-id my-task-001 --json
+```
 
-可选配置位于 `~/.cursor-use/config.json`，只保存个人默认模型和等待偏好，不保存 API Key、任务目标、仓库或状态目录。命令行显式参数优先。示例和严格校验规则见 [CLI 契约](docs/protocols/cli.md#用户级配置)。
+从回执里记下 `agentId` 和 `runId`，再等待、订阅或续派：
 
-## Skill
+```sh
+cursor-use runs wait --agent-id <bc-id> --run-id <run-id> --json
+cursor-use agents result --agent-id <bc-id> --run-id <run-id> --json
+cursor-use agents follow-up --agent-id <bc-id> --prompt "Add the missing edge case." --request-id my-task-002 --json
+```
 
-Skill 文件位于 [skills/cursor-use/SKILL.md](skills/cursor-use/SKILL.md)。宿主可以按自身规则安装或链接该目录；项目不会假定某个 Agent 宿主会自动发现它。
+`FINISHED` 只表示这轮跑完了，不等于验收通过。还要看结果、git 快照、产物，以及你自己的标准。
 
-## 文档与维护
+## 配置
 
-- [中文说明](README.zh-CN.md)
+可选默认值在 `~/.cursor-use/config.json`。文件只存模型和等待 / 流式偏好，不存 API Key、环境、仓库、request ID 或状态目录。
+
+命令行参数覆盖配置文件。换 `--model` 时，不会沿用上一个模型的参数。格式和报错见 [CLI 契约](docs/protocols/cli.md#用户级配置)。
+
+本地回执默认在 `~/.local/state/cursor-use/state.sqlite`，用 `CURSOR_USE_STATE_DIR` 改目录。
+
+## Agent skill
+
+要让另一个 Coding Agent 操作这套 CLI，按那个宿主自己的规则安装或链接 [skills/cursor-use/SKILL.md](skills/cursor-use/SKILL.md)。Cursor、Claude 和其他宿主不会自己找到这份 skill。
+
+## 安全
+
+- 不要把 `CURSOR_API_KEY` 写进对话、提交或 prompt 文件。
+- CLI 不读 Cursor 桌面登录态。
+- 产物下载不转发 API Key，也不覆盖已有文件。
+- 取消要显式发命令。本地超时不会停掉云端 Run。
+
+## 限制
+
+- 不支持原生 Projects 管理
+- 没有完整的保存环境目录
+- 不开放 `envVars` beta
+- 不支持桌面 CDP、`cursor-agent`，也不做终端到桌面控制
+- 不自动合并
+- 环境观察有上限，列表可能不完整
+- 提供方 git 元数据是 Agent 级快照，不能当某一轮的提交证明
+
+## 文档
+
+- [CLI 契约](docs/protocols/cli.md)
+- [请求恢复](docs/runbook/request-recovery.md)
 - [文档导航](docs/README.md)
+- [变更记录](CHANGELOG.md)
 - [贡献指南](CONTRIBUTING.md)
 - [安全策略](SECURITY.md)
-- [行为准则](CODE_OF_CONDUCT.md)
-- [变更记录](CHANGELOG.md)
-- [维护者 Agent 指南](AGENTS.md)
 - [许可证](LICENSE)
-- [第三方许可证清单](THIRD_PARTY_NOTICES.md)
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE)。Cursor 服务、账号权限、远端仓库和相关第三方服务遵循各自的条款。
+MIT。Cursor 账号、云端执行和第三方仓库仍走各自条款。

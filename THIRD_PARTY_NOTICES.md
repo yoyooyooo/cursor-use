@@ -2,7 +2,7 @@
 
 The published CLI is bundled with production dependencies. This inventory is
 based on the locked production dependency graph used by `bun pm licenses --prod`
-for version `0.2.1`. Dependency license terms remain separate from this
+for version `0.2.2`. Dependency license terms remain separate from this
 project's MIT license.
 
 | Package | Version | License | Copyright or notice | Upstream |

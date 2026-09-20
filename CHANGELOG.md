@@ -4,9 +4,11 @@
 
 ## Unreleased
 
-- 完善公开仓库许可证、贡献、安全报告和发布入口。
-- 增加受限 npm 包清单、构建前置、catalog 展开和发布包检查。
-- 清理公开文档中的本机路径、真实云端标识和桌面实验细节。
+## 0.2.2 - 2026-09-20
+
+- 发布包用 Bun 打 tarball，再交给 npm 发布，避免 `catalog:` 进入 registry。
+- 后续版本通过 GitHub Actions Trusted Publishing 发版。
+- 面向用户的双语 README 和英文 skill。
 
 ## 0.2.1 - 2026-09-20
 
