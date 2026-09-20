@@ -2,6 +2,8 @@
 
 `cursor-use` 是一个 Bun CLI 和 Agent skill，用于通过官方 Cursor Cloud Agents API 派发、跟进和恢复云端任务。
 
+首个 npm 版本必须从已登录的本地会话发布。之后的版本通过 GitHub Actions Trusted Publishing 发布。
+
 ## 当前范围
 
 - 官方 Cloud Agents API v1
