@@ -39,9 +39,10 @@ registry. Do not publish a dummy `0.0.0`. The first version is the real `0.2.1`.
    - Environment: empty
    - Allowed actions: `npm publish`
 3. Later versions are published by pushing a matching tag, for example `v0.2.2`.
-   The tag workflow packs with Bun, then publishes the tarball with `npm publish`.
-   Do not store an npm token in GitHub Actions. Do not run directory
-   `npm publish` for later versions.
+   The tag workflow packs with Bun into `release/`, then publishes that tarball
+   with `npm publish`. Leave `NODE_AUTH_TOKEN` unset so npm uses OIDC. Do not
+   store an npm token in GitHub Actions. Do not run directory `npm publish` for
+   later versions.
 
 `bun publish` is not the trusted-publishing path.
 
