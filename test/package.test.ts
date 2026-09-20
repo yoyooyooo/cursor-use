@@ -5,7 +5,7 @@ import manifest from "../package.json";
 test("public package metadata has an explicit license and bounded contents", () => {
   expect("private" in manifest).toBe(false);
   expect(manifest.license).toBe("MIT");
-  expect(manifest.repository).toEqual({ type: "git", url: "https://github.com/yoyooyooo/cursor-use.git" });
+  expect(manifest.repository).toEqual({ type: "git", url: "git+https://github.com/yoyooyooo/cursor-use.git" });
   expect(manifest.files).toEqual([
     "dist/main.js",
     "skills/cursor-use/SKILL.md",
