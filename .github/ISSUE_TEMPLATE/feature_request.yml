@@ -1,0 +1,31 @@
+name: Feature request
+description: Propose a scoped change to the public CLI or skill.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Requests must respect the official public Cursor Cloud API and the project's credential and recovery boundaries.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user workflow is blocked or unnecessarily risky?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the smallest public behavior that would solve it.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and boundaries
+      description: Explain rejected approaches, especially private APIs, desktop automation, or paid remote validation.
+    validations:
+      required: true

@@ -1,0 +1,13 @@
+.DS_Store
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+!.env.example
+.cursor-use/
+.firecrawl/
+artifacts/
+*.tgz

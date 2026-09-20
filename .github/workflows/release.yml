@@ -1,0 +1,27 @@
+name: Release package
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: mkdir -p release
+      - run: bun pm pack --destination release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cursor-use-package
+          path: release/*.tgz
+          if-no-files-found: error

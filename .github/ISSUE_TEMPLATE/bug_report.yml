@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a reproducible problem in cursor-use.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include API keys, private repository URLs, signed artifact URLs, local paths, or real Agent/Run identifiers.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `cursor-use --version` or the commit.
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime
+      description: Bun version and operating system.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Include the smallest safe command or test case.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Redact credentials and account-specific identifiers.
+    validations:
+      required: true

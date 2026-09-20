@@ -1,0 +1,84 @@
+{
+  "name": "cursor-use",
+  "version": "0.2.1",
+  "description": "A Bun CLI and agent skill for Cursor Cloud Agents.",
+  "type": "module",
+  "license": "MIT",
+  "author": {
+    "name": "yoyooyooo",
+    "url": "https://github.com/yoyooyooo"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yoyooyooo/cursor-use.git"
+  },
+  "homepage": "https://github.com/yoyooyooo/cursor-use#readme",
+  "bugs": {
+    "url": "https://github.com/yoyooyooo/cursor-use/issues"
+  },
+  "keywords": [
+    "cursor",
+    "cursor-cloud-agent",
+    "coding-agent",
+    "cli",
+    "bun",
+    "effect",
+    "agent-skill"
+  ],
+  "files": [
+    "dist/main.js",
+    "skills/cursor-use/SKILL.md",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "bun@1.4.2",
+  "engines": {
+    "bun": ">=1.4.2"
+  },
+  "bin": {
+    "cursor-use": "./dist/main.js"
+  },
+  "scripts": {
+    "dev": "bun src/main.ts",
+    "build": "bun build src/main.ts --target=bun --outdir=dist",
+    "typecheck": "tsc --noEmit",
+    "test": "bun run build && bun test test",
+    "check": "bun run typecheck && bun run test",
+    "package:check": "bun run check && bun run package:assert && bun dist/main.js --version",
+    "package:assert": "bun scripts/package-assert.ts",
+    "prepack": "bun run pack:prepare && bun run build",
+    "pack:prepare": "bun scripts/prepare-package.ts",
+    "postpack": "bun run pack:restore",
+    "pack:restore": "bun scripts/restore-package.ts",
+    "prepublishOnly": "bun run check"
+  },
+  "workspaces": {
+    "packages": [],
+    "catalog": {
+      "effect": "4.0.0-beta.107",
+      "@effect/platform-bun": "4.0.0-beta.107",
+      "@effect/platform-node-shared": "4.0.0-beta.107",
+      "typescript": "7.0.2",
+      "@types/bun": "1.4.2"
+    }
+  },
+  "dependencies": {
+    "effect": "catalog:",
+    "@effect/platform-bun": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "@types/bun": "catalog:"
+  },
+  "overrides": {
+    "effect": "catalog:",
+    "@effect/platform-bun": "catalog:",
+    "@effect/platform-node-shared": "catalog:"
+  }
+}
