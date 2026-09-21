@@ -138,7 +138,7 @@ cursor-use agents follow-up --agent-id <bc-id> --prompt "Add the missing edge ca
 - [CLI 契约](docs/protocols/cli.md)
 - [请求恢复](docs/runbook/request-recovery.md)
 - [文档导航](docs/README.md)
-- [变更记录](CHANGELOG.md)
+- [变更记录](CHANGELOG.zh-CN.md) | [English changelog](CHANGELOG.md)
 - [贡献指南](CONTRIBUTING.md)
 - [安全策略](SECURITY.md)
 - [许可证](LICENSE)

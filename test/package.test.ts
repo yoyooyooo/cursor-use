@@ -13,6 +13,7 @@ test("public package metadata has an explicit license and bounded contents", () 
     "README.zh-CN.md",
     "LICENSE",
     "CHANGELOG.md",
+    "CHANGELOG.zh-CN.md",
     "THIRD_PARTY_NOTICES.md",
   ]);
   for (const path of manifest.files) expect(existsSync(path)).toBe(true);

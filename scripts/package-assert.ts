@@ -28,6 +28,7 @@ const dependencyText = JSON.stringify({ dependencies: manifest.dependencies, dev
 if (dependencyText.includes("catalog:")) throw new Error("Published package manifest still contains catalog: references");
 const expected = [
   "package/CHANGELOG.md",
+  "package/CHANGELOG.zh-CN.md",
   "package/LICENSE",
   "package/README.md",
   "package/README.zh-CN.md",
