@@ -19,6 +19,6 @@ test("the skill matches shipped busy follow-up, env git and empty-result behavio
   expect(text).toContain("never queued");
   expect(text).toContain("emptyResult");
   expect(text).toContain("envs show");
-  expect(text).toContain("prompt clone URLs do not replace");
+  expect(text).toContain("Prompt clone URLs do not replace");
   expect(text).toContain("agent.repos");
 });

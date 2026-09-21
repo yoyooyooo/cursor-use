@@ -175,7 +175,15 @@ function saveOutcome<A extends { run: typeof S.Run.Type }>(receipt: Receipt, ope
       const error = result.failure;
       const uncertain = error.uncertain ?? true;
       const saved = yield* Effect.result(store.update(receipt.requestId, { state: uncertain ? "unknown" : "rejected", error: error.message }));
-      return yield* Effect.fail(updateFault(error, { code: uncertain ? "OUTCOME_UNKNOWN" : error.code, uncertain, details: { receipt: saved._tag === "Success" ? saved.success : receipt, receiptSaved: saved._tag === "Success", providerDetails: error.details } }));
+      const priorDetails = error.details !== null && typeof error.details === "object" && !Array.isArray(error.details)
+        ? error.details as Record<string, unknown>
+        : { providerDetails: error.details };
+      return yield* Effect.fail(updateFault(error, {
+        code: uncertain ? "OUTCOME_UNKNOWN" : error.code,
+        uncertain,
+        nextStep: error.nextStep ?? (error.providerCode === "agent_busy" ? FOLLOW_UP_BUSY_NEXT_STEP : error.nextStep),
+        details: { ...priorDetails, receipt: saved._tag === "Success" ? saved.success : receipt, receiptSaved: saved._tag === "Success", providerDetails: error.details },
+      }));
     }
     const value = result.success;
     const saved = yield* Effect.result(store.update(receipt.requestId, { state: "submitted", runId: value.run.id, runAttribution: "confirmed" }));
@@ -314,7 +322,8 @@ export function followUp(input: FollowUpInput) {
     if (!(yield* store.claim(receipt.requestId))) return yield* reconcileReceipt(yield* store.get(receipt.requestId));
     return yield* saveOutcome(receipt, request("POST", `${agentPath(input.agentId)}/runs`, S.CreatedRun, body).pipe(
       Effect.flatMap((created) => created.run.agentId === input.agentId ? Effect.succeed(created) : Effect.fail(new Fault({ code: "PROVIDER_CONTRACT", message: "Cursor returned a run for another agent.", uncertain: true }))),
-      Effect.catchIf((error): error is Fault => error instanceof Fault && (error.providerCode === "agent_busy" || (error.status === 409 && error.providerCode === "agent_busy")), (error) => Effect.gen(function* () {
+      Effect.catch((error) => Effect.gen(function* () {
+        if (!(error instanceof Fault) || error.providerCode !== "agent_busy") return yield* Effect.fail(error);
         const current = yield* Effect.result(inspectFollowUpReadiness(yield* getAgent(input.agentId)));
         const latest = current._tag === "Success" ? current.success : readiness;
         return yield* Effect.fail(followUpBusyFault(latest, { newRequestIdRequired: true, cause: error }));
