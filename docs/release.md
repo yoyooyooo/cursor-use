@@ -9,13 +9,14 @@ The canonical repository is:
 ## Versioning
 
 Versions follow Semantic Versioning. User-visible behavior, CLI output changes,
-security fixes and dependency changes belong in `CHANGELOG.md`. A release tag
-must match the package version, for example `v0.2.1`.
+security fixes and dependency changes belong in `CHANGELOG.md` and
+`CHANGELOG.zh-CN.md`. A release tag must match the package version, for
+example `v0.2.1`.
 
 ## Package contents
 
 `package.json` uses a `files` allowlist. A package contains only the built CLI,
-the skill, public README files, the license, the changelog and
+the skill, public README files, the license, the bilingual changelog and
 `THIRD_PARTY_NOTICES.md`. Source files, tests, local evidence, internal guides,
 state databases and research notes are not package contents.
 

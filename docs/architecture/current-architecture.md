@@ -10,6 +10,7 @@ cursor-use/
   README.zh-CN.md
   LICENSE
   CHANGELOG.md
+  CHANGELOG.zh-CN.md
   CONTRIBUTING.md
   SECURITY.md
   AGENTS.md

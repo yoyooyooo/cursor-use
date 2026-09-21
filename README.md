@@ -138,7 +138,7 @@ To let another coding agent operate this CLI, install or link [skills/cursor-use
 - [CLI contract](docs/protocols/cli.md)
 - [Request recovery](docs/runbook/request-recovery.md)
 - [Documentation map](docs/README.md)
-- [Changelog](CHANGELOG.md)
+- [Changelog](CHANGELOG.md) | [中文变更记录](CHANGELOG.zh-CN.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [License](LICENSE)
