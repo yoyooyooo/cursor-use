@@ -53,6 +53,7 @@
     "check": "bun run typecheck && bun run test",
     "package:check": "bun run check && bun run package:assert && bun dist/main.js --version",
     "package:assert": "bun scripts/package-assert.ts",
+    "release": "bun scripts/release.ts",
     "prepack": "bun run pack:prepare && bun run build",
     "pack:prepare": "bun scripts/prepare-package.ts",
     "postpack": "bun run pack:restore",

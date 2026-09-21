@@ -13,7 +13,7 @@
 
 ## 当前可运行检查
 
-在仓库根目录运行 `bun install --frozen-lockfile` 与 `bun run check`。check 依次执行 TypeScript 检查、Bun 构建和 Bun 测试。发布前另运行 `bun run package:check`，核对打包清单、展开后的依赖版本和构建 CLI 版本。
+在仓库根目录运行 `bun install --frozen-lockfile` 与 `bun run check`。check 依次执行 TypeScript 检查、Bun 构建和 Bun 测试。发布前另运行 `bun run package:check`，核对打包清单、展开后的依赖版本和构建 CLI 版本。切公开版本使用 `bun run release`，不要手改版本号或 changelog 标题；步骤见[发布策略](../release.md)。
 
 - CLI 测试覆盖帮助、版本、无参数、未知选项和未实现命令，同时验证源码入口与构建产物的输出通道和退出码。
 - 工具链测试覆盖 catalog 的精确版本、所有依赖及 override 的 catalog 引用，以及安装后的版本一致性。

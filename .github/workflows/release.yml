@@ -15,6 +15,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -23,7 +25,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-          package-manager-cache: false
+      - id: meta
+        name: Require tag to match package.json
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          expected="v${version}"
+          if [ "${GITHUB_REF_NAME}" != "${expected}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package version ${expected}." >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
       - run: npm install -g npm@latest
       - run: |
           echo "npm $(npm --version)"
@@ -33,3 +44,30 @@ jobs:
       - run: mkdir -p release
       - run: bun pm pack --destination release
       - run: npm publish ./release/*.tgz --access public --provenance
+  verify-registry:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Wait for npm to serve this version
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          if [ -z "${VERSION}" ]; then
+            echo "Publish job did not output a version." >&2
+            exit 1
+          fi
+          attempts=20
+          i=1
+          while [ "$i" -le "$attempts" ]; do
+            if npm view "cursor-use@${VERSION}" version; then
+              exit 0
+            fi
+            echo "npm has not served cursor-use@${VERSION} yet (attempt ${i}/${attempts})."
+            i=$((i + 1))
+            sleep 15
+          done
+          echo "Published cursor-use@${VERSION}, but npm did not serve it within the wait window. Re-run this job; do not re-run publish." >&2
+          exit 1
