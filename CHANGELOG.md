@@ -6,6 +6,8 @@ This file records notable public changes. Unreleased work stays under `Unrelease
 
 ## Unreleased
 
+- Add `bun run release` to cut a version from Unreleased notes, bump `package.json`, and optionally commit/tag/push. The README install floor stays at `0.2.2`. The tag workflow checks that the tag matches the package version and waits for npm readback.
+
 ## 0.2.3 - 2026-09-21
 
 - Busy follow-up is never queued: `agents follow-up --wait` waits until idle, then POSTs once. `409 agent_busy` JSON includes `activeRunId` and `nextStep=wait-then-new-request-id`.

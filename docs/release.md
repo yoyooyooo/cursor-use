@@ -9,9 +9,36 @@ The canonical repository is:
 ## Versioning
 
 Versions follow Semantic Versioning. User-visible behavior, CLI output changes,
-security fixes and dependency changes belong in `CHANGELOG.md` and
-`CHANGELOG.zh-CN.md`. A release tag must match the package version, for
-example `v0.2.1`.
+security fixes and dependency changes belong under `Unreleased` in
+`CHANGELOG.md` and `CHANGELOG.zh-CN.md`. The two files must keep the same
+number of Unreleased notes.
+
+Do not hand-edit `package.json` version, changelog version headings, or the
+README install floor when cutting a release. The install floor stays at `0.2.2`
+(`0.2.1` still contains workspace `catalog:` references).
+
+A release tag must match the package version, for example `v0.2.3`.
+
+## Cutting a version
+
+On a clean `main` that already contains the Unreleased notes:
+
+```sh
+bun run check
+bun run package:check
+bun run release -- patch
+bun run release -- patch --push
+```
+
+`bun run release` is dry-run unless `--commit` or `--push` is set. It bumps
+`package.json`, moves Unreleased notes into a dated version heading in both
+changelogs, commits `Release x.y.z.`, and creates tag `vX.Y.Z`. `--push` also
+pushes `main` and the tag. Use `minor`, `major`, or an explicit `x.y.z` instead
+of `patch` when that is the intended bump.
+
+`--push` is an owner-authorized publish intent. Do not run it from a feature
+branch, a dirty tree, or a local test. Do not `npm publish` from a working
+tree.
 
 ## Package contents
 
@@ -39,11 +66,13 @@ registry. Do not publish a dummy `0.0.0`. The first version is the real `0.2.1`.
    - Workflow filename: `release.yml`
    - Environment: empty
    - Allowed actions: `npm publish`
-3. Later versions are published by pushing a matching tag, for example `v0.2.2`.
-   The tag workflow packs with Bun into `release/`, then publishes that tarball
-   with `npm publish`. Leave `NODE_AUTH_TOKEN` unset so npm uses OIDC. Do not
-   store an npm token in GitHub Actions. Do not run directory `npm publish` for
-   later versions.
+3. Later versions are published by pushing a matching tag. The tag workflow
+   refuses a tag that does not match `package.json`, packs with Bun into
+   `release/`, publishes that tarball with `npm publish`, then waits for npm
+   readback. Leave `NODE_AUTH_TOKEN` unset so npm uses OIDC. Do not store an
+   npm token in GitHub Actions. Do not run directory `npm publish` for later
+   versions. If readback times out after a successful publish, re-run only the
+   verify job. Do not re-run publish.
 
 `bun publish` is not the trusted-publishing path.
 

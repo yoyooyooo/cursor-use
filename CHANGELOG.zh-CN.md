@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+- 增加 `bun run release`：从 Unreleased 切出版本、更新 `package.json`，可选提交/打 tag/推送。README 安装下限固定为 `0.2.2`。tag 工作流核验 tag 与包版本一致，并等待 npm 回读。
+
 ## 0.2.3 - 2026-09-21
 
 - 忙碌续派明确从不排队：`agents follow-up --wait` 等到空闲后再 POST 一次；`409 agent_busy` JSON 带 `activeRunId`、`nextStep=wait-then-new-request-id`。

@@ -20,6 +20,8 @@ Run commands from the repository root and use `package.json` as the source of tr
 | Frozen install | `bun install --frozen-lockfile` |
 | Source, dependency or test change | `bun run check` |
 | Package and clean CLI check | `bun run package:check` |
+| Preview a version cut | `bun run release -- patch` |
+| Owner-authorized tag publish | `bun run release -- patch --push` |
 | Source CLI help | `bun run dev --help` |
 | Format and whitespace check | `git diff --check` |
 

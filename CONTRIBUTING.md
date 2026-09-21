@@ -34,6 +34,10 @@ bun run package:check
 - 付费 POST 必须先持久化意图；未知结果不得自动重试。
 - 不新增任意 API proxy、登录态提取、桌面 CDP、`cursor-agent` 或未验证的原生 Projects 能力。
 
+## 发布
+
+用户可见的变更写入 `CHANGELOG.md` 和 `CHANGELOG.zh-CN.md` 的 `Unreleased`。不要手改 `package.json` 版本或把 Unreleased 剪成版本标题。公开版本由维护者在 `main` 上运行 `bun run release` 切出，推送匹配 tag 后由 GitHub Actions 发布。步骤见[发布策略](docs/release.md)。
+
 ## Pull request
 
 请使用仓库的 Pull Request 模板。维护者会检查测试、文档入口、敏感信息扫描、包清单和公共契约是否同步。合并由仓库维护者根据 CI 和审查结果决定。

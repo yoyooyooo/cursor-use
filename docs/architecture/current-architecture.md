@@ -25,6 +25,8 @@ cursor-use/
     prepare-package.ts
     restore-package.ts
     package-assert.ts
+    package-paths.ts
+    release.ts
   src/
     cli.ts
     main.ts
@@ -53,6 +55,7 @@ cursor-use/
     docs.test.ts
     package.test.ts
     config.test.ts
+    release.test.ts
   skills/cursor-use/SKILL.md
   docs/
     README.md
@@ -122,9 +125,9 @@ cursor-use/
 
 [HTTP 测试](../../test/cursor-api.test.ts) 验证认证、重定向、响应约束、读重试与写不重试；[业务测试](../../test/operations.test.ts) 验证恢复、账号和目标一致性、续派、分页与等待；[进程测试](../../test/process-io.test.ts) 验证大 JSON 与多进程状态初始化。测试不继承真实 Key，不创建付费任务。
 
-[SSE 测试](../../test/stream.test.ts) 与[下载测试](../../test/artifact-download.test.ts) 验证故障、中断和资源释放；[错误测试](../../test/errors.test.ts) 防止诊断丢失；[配置测试](../../test/config.test.ts) 验证严格解析、缺省和大小限制；[skill 测试](../../test/skill.test.ts) 和[文档测试](../../test/docs.test.ts) 校验发现元数据、显式本地链接及入口可达性。
+[SSE 测试](../../test/stream.test.ts) 与[下载测试](../../test/artifact-download.test.ts) 验证故障、中断和资源释放；[错误测试](../../test/errors.test.ts) 防止诊断丢失；[配置测试](../../test/config.test.ts) 验证严格解析、缺省和大小限制；[skill 测试](../../test/skill.test.ts) 和[文档测试](../../test/docs.test.ts) 校验发现元数据、显式本地链接及入口可达性。[发布测试](../../test/release.test.ts) 校验从 Unreleased 切版、双语条数和 tag 提交。
 
-[CI 配置](../../.github/workflows/check.yml) 从 package.json 读取 Bun 版本，在 Ubuntu 和 macOS 上执行 frozen 安装、`bun run check` 和 `bun run package:check`。[发布包工作流](../../.github/workflows/release.yml) 只在版本 tag 上构建包产物，不自动发布 npm。本地配置了流程不等于远端 CI 已经运行。
+[CI 配置](../../.github/workflows/check.yml) 从 package.json 读取 Bun 版本，在 Ubuntu 和 macOS 上执行 frozen 安装、`bun run check` 和 `bun run package:check`。[发布包工作流](../../.github/workflows/release.yml) 在匹配 `package.json` 的版本 tag 上打包，用 Trusted Publishing 发布到 npm，并等待 registry 回读。本地 `bun run release -- patch` 只预览切版；`--push` 才是 owner 授权的发布意图。本地配置了流程不等于远端 CI 已经运行。
 
 ## 实现进入条件
 

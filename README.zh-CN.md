@@ -55,7 +55,7 @@ cursor-use --version
 cursor-use capabilities --json
 ```
 
-请安装 `0.2.3` 或更高版本。`0.2.1` 的依赖仍是 workspace `catalog:`，装不上。
+请安装 `0.2.2` 或更高版本。`0.2.1` 的依赖仍是 workspace `catalog:`，装不上。
 
 从源码安装：
 
