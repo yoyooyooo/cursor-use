@@ -1,6 +1,6 @@
 {
   "name": "cursor-use",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "A Bun CLI and agent skill for Cursor Cloud Agents.",
   "type": "module",
   "license": "MIT",

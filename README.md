@@ -55,7 +55,7 @@ cursor-use --version
 cursor-use capabilities --json
 ```
 
-Use `0.2.2` or later. `0.2.1` still contains workspace `catalog:` dependency references and will not install.
+Use `0.2.3` or later. `0.2.1` still contains workspace `catalog:` dependency references and will not install.
 
 From source:
 

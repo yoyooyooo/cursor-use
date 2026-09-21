@@ -6,6 +6,8 @@ This file records notable public changes. Unreleased work stays under `Unrelease
 
 ## Unreleased
 
+## 0.2.3 - 2026-09-21
+
 - Busy follow-up is never queued: `agents follow-up --wait` waits until idle, then POSTs once. `409 agent_busy` JSON includes `activeRunId` and `nextStep=wait-then-new-request-id`.
 - Add `envs show --name`. `--observed` and `envs list` can show last-seen snapshot `repos[]`. Public v1 has no environment catalog, and `--env` still does not combine with `--repo`/`--ref`.
 - `--env` dry-run emits `git` constraints: prompt text does not replace snapshot repos; launch / `agents show` `repos` is the git the cloud used.

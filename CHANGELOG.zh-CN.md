@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 0.2.3 - 2026-09-21
+
 - 忙碌续派明确从不排队：`agents follow-up --wait` 等到空闲后再 POST 一次；`409 agent_busy` JSON 带 `activeRunId`、`nextStep=wait-then-new-request-id`。
 - 增加 `envs show --name`；`--observed` 与 `envs list` 可显示 last-seen snapshot `repos[]`。公开 v1 没有环境 catalog，`--env` 仍不与 `--repo`/`--ref` 组合。
 - `--env` dry-run 输出 `git` 约束：prompt 不能替换 snapshot 仓库，launch/`agents show` 的 `repos` 才是云端 git。
