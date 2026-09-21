@@ -9,12 +9,19 @@ export type FaultFields = {
   readonly providerCode?: string | undefined;
   readonly retryAfterSeconds?: number | undefined;
   readonly providerRequestId?: string | undefined;
+  readonly nextStep?: string | undefined;
 };
 export class Fault extends Data.TaggedError("Fault")<FaultFields> {}
 
+export const FOLLOW_UP_BUSY_NEXT_STEP = "wait-then-new-request-id" as const;
+
 export function updateFault(error: Fault, patch: Partial<FaultFields>): Fault {
   // Error.message is not enumerable; object spread alone loses it.
-  return new Fault({ code: error.code, message: error.message, status: error.status, uncertain: error.uncertain, details: error.details, providerCode: error.providerCode, retryAfterSeconds: error.retryAfterSeconds, providerRequestId: error.providerRequestId, ...patch });
+  return new Fault({
+    code: error.code, message: error.message, status: error.status, uncertain: error.uncertain, details: error.details,
+    providerCode: error.providerCode, retryAfterSeconds: error.retryAfterSeconds, providerRequestId: error.providerRequestId,
+    nextStep: error.nextStep, ...patch,
+  });
 }
 
 export function redact(text: string, key = process.env.CURSOR_API_KEY): string {

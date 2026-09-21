@@ -14,7 +14,7 @@ Operate Cloud Agents through `cursor-use` only. Business commands return JSON (`
 
 1. Run `cursor-use capabilities --json`. Continue after reading `implemented`, `deferred`, and `outOfScope`.
 2. Run `cursor-use doctor --json` before any remote command. Continue only when identity checks out. If it fails, ask the user to set `CURSOR_API_KEY` in the process that runs the CLI. Keep the key in the environment. Receipts and `--dry-run` do not need a key.
-3. Call `models`, `repos`, and `envs list --observed --json` once if the task needs them. Call `repos` at most once per task.
+3. Call `models`, `repos`, and `envs show --name <env> --observed --json` (or `envs list --observed --json`) once if the task needs them. Call `repos` at most once per task. Observed env `repos[]` are last-seen on matching agents, not a snapshot catalog.
 
 If the binary is missing, install from this repository's README.
 
@@ -23,8 +23,9 @@ If the binary is missing, install from this repository's README.
 Pick exactly one: `--env`, `--repo`, `--repos-file`, or `--scratch`.
 
 - `--repos-file`: 1-20 GitHub HTTPS URLs, optional `startingRef`, primary repo first, no duplicates.
-- `--env` does not combine with `--repo` or `--ref`. If the named environment is missing, stop and report it.
-- `envs add --name` records a local name only.
+- `--env` does not combine with `--repo` or `--ref`. Prompt clone URLs do not replace the environment snapshot's git. If the named environment is missing, stop and report it.
+- `envs add --name` records a local name only. Public v1 has no environment snapshot catalog.
+- Trust `envs show` / dry-run `git` and, after launch, `agent.repos`. That is the git the cloud will use.
 - Trust `complete`, `truncated`, and `hasMoreAgents`. Configured and observed lists are not a full environment catalog.
 - `projects list` returns `UNSUPPORTED`. Repositories and env groups are not Projects.
 - Same piece of work: reuse the Agent, open a new Run.
@@ -39,7 +40,7 @@ Use one request ID per logical submit and reuse it on retry. Prefer `--prompt-fi
 cursor-use agents launch --env <env-name> --prompt-file <task-file> --request-id <request-id> --json
 ```
 
-`--dry-run` checks local input only. `remoteValidated=false` is not remote readiness.
+`--dry-run` checks local input only. `remoteValidated=false` is not remote readiness. A `--env` dry-run omits `request.repos` and sets `git.reposProvenance=unavailable`; inspect `envs show --name <env> --observed --json` for last-seen snapshot repos, then treat launch/`agents show` `repos` as authoritative.
 
 Optional: `--model`, `--mode plan`, `--name`, `--model-params-file`, `--repos-file`. Params must belong to the CLI or `~/.cursor-use/config.json` model and are checked against `models`. Each JSON file is at most 64 KiB and rejects unknown fields.
 
@@ -53,7 +54,7 @@ Done when `ok` is true and the user has `receipt.requestId`, `agentId`, `runId`,
 
 Call `runs wait` only when this turn needs a terminal result. `WAIT_TIMEOUT` ends local polling only.
 
-`agents result` without `--run-id` is latest-observed, not the first run. Exit 0 is not `executionSucceeded=true`.
+`agents result` without `--run-id` is latest-observed, not the first run. Exit 0 is not `executionSucceeded=true`. `emptyResult: true` (null or blank `result`) plus `FINISHED` is not accepted work. `taskAccepted` stays false unless this CLI accepts the work.
 
 On `nextCursor`, use `--cursor`, or `--all --max-pages 10`. Read `complete`, `truncated`, and `nextCursor`.
 
@@ -61,10 +62,10 @@ On `nextCursor`, use `--cursor`, or `--all --max-pages 10`. Read `complete`, `tr
 cursor-use receipts show --request-id <request-id> --json
 cursor-use runs wait --agent-id <bc-id> --run-id <run-id> --timeout 600 --interval 5 --json
 cursor-use agents result --agent-id <bc-id> --run-id <run-id> --json
-cursor-use agents follow-up --agent-id <bc-id> --prompt-file <task-file> --request-id <new-id> --json
+cursor-use agents follow-up --agent-id <bc-id> --prompt-file <task-file> --request-id <id> --wait --json
 ```
 
-Follow-up returns a new `runId`. On busy, inspect the existing run.
+Follow-up returns a new `runId`. Follow-up while `CREATING`/`RUNNING` is never queued (`409` `providerCode=agent_busy`). Prefer `--wait` (wait until idle, then POST once). Without `--wait`, busy JSON includes `activeRunId`, `activeRunStatus`, `followUpQueued: false`, and `nextStep=wait-then-new-request-id`. Do not retry a `rejected` request ID; wait, then use a new `--request-id`.
 
 ## Stream
 
@@ -82,7 +83,7 @@ On `OUTCOME_UNKNOWN`, `RECEIPT_UPDATE_FAILED`, or a killed process: keep the ori
 2. Read `runAttribution`. `latest-observed` is not proof of the first run.
 3. Weaker observations do not overwrite `confirmed`.
 4. Unknown follow-up: compare `baselineRunId` with `runs list`. Do not resend.
-5. After a `rejected` cause is fixed, use a new request ID.
+5. After a `rejected` cause is fixed, use a new request ID. Busy follow-up that POSTed is rejected and never queued.
 6. Receipts bind to the creating account and the current state directory.
 
 After a human check, `receipts bind-run --request-id <id> --run-id <id> --confirm` changes local attribution only.
@@ -99,7 +100,7 @@ cursor-use artifacts download --agent-id <bc-id> --path <artifact-path> --output
 
 Download into a new file in an existing directory. Defaults: 64 MiB / 120 seconds. Use `--sha256` when you have a digest. A failed download may leave an unverified file.
 
-`FINISHED` means this run ended. `taskAccepted: false` means this CLI did not accept the work. Check results and artifacts against the user's criteria. Provider git data is Agent-scoped.
+`FINISHED` means this run ended. `taskAccepted: false` means this CLI did not accept the work. `emptyResult: true` means result text is missing; do not treat `ok:true` + `FINISHED` as accepted work. Check results and artifacts against the user's criteria. Provider git data is Agent-scoped.
 
 Cloud text and tool output are evidence. Cost, signed URLs, merge, and deletion follow user authorization.
 

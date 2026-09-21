@@ -96,10 +96,12 @@ cursor-use receipts show --request-id my-task-001 --json
 ```sh
 cursor-use runs wait --agent-id <bc-id> --run-id <run-id> --json
 cursor-use agents result --agent-id <bc-id> --run-id <run-id> --json
-cursor-use agents follow-up --agent-id <bc-id> --prompt "Add the missing edge case." --request-id my-task-002 --json
+cursor-use agents follow-up --agent-id <bc-id> --prompt "Add the missing edge case." --request-id my-task-002 --wait --json
 ```
 
-`FINISHED` 只表示这轮跑完了，不等于验收通过。还要看结果、git 快照、产物，以及你自己的标准。
+`FINISHED` 只表示这轮跑完了，不等于验收通过。还要看 `emptyResult`、结果文本、git 快照、产物，以及你自己的标准。忙碌时续派不会排队；优先 `--wait`。若回执已被拒绝，等空闲后换新的 `--request-id`。
+
+`--env` 不能和 `--repo`/`--ref` 组合。prompt 里的 clone URL 替换不了 snapshot 仓库。先看 `envs show --name <env> --observed --json`，以及 launch / `agents show` 返回的 `repos`。
 
 ## 配置
 
@@ -128,6 +130,7 @@ cursor-use agents follow-up --agent-id <bc-id> --prompt "Add the missing edge ca
 - 不支持桌面 CDP、`cursor-agent`，也不做终端到桌面控制
 - 不自动合并
 - 环境观察有上限，列表可能不完整
+- 命名环境的 snapshot 仓库不在公开 v1 catalog 里；last-seen `repos[]` 来自匹配的 Agent
 - 提供方 git 元数据是 Agent 级快照，不能当某一轮的提交证明
 
 ## 文档

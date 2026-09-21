@@ -95,3 +95,16 @@ test("long rate-limit delays are exposed without hidden retry loops", async () =
   expect(result.failure).toMatchObject({ code: "RATE_LIMITED", details: { retryAfterSeconds: 60 } });
   expect(count).toBe(1);
 });
+
+test("agent_busy writes are rejected without retry and expose the provider code", async () => {
+  let count = 0;
+  const api = makeCursorApi({ apiKey: "unit-test-key", fetch: async () => {
+    count++;
+    return Response.json({ error: { code: "agent_busy", message: "Agent is busy" } }, { status: 409 });
+  } });
+  const result = await Effect.runPromise(Effect.result(api.request("POST", "/v1/agents/bc-example/runs", { prompt: { text: "x" } })));
+  expect(result._tag).toBe("Failure");
+  if (result._tag !== "Failure") throw new Error("Expected failure");
+  expect(result.failure).toMatchObject({ code: "CONFLICT", status: 409, uncertain: false, providerCode: "agent_busy" });
+  expect(count).toBe(1);
+});

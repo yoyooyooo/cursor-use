@@ -6,7 +6,8 @@ import { Effect, Fiber, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { CursorApi, type Method } from "../src/cursor-api.ts";
 import { Fault } from "../src/errors.ts";
-import { launch, launchBody, previewLaunch, followUp, reconcile, waitRun, listAgents, listEnvironments, addEnvironment, getRun, bindRun, cancelRun, agentResult } from "../src/operations.ts";
+import { launch, launchBody, previewLaunch, followUp, reconcile, waitRun, listAgents, listEnvironments, addEnvironment, getRun, bindRun, cancelRun, agentResult, showEnvironment } from "../src/operations.ts";
+import { FOLLOW_UP_BUSY_NEXT_STEP } from "../src/errors.ts";
 import { makeReceiptStore, ReceiptStore, type Receipt } from "../src/receipts.ts";
 
 type Call = { method: Method; path: string; body?: unknown };
@@ -15,11 +16,14 @@ function fixture() {
   const directory = mkdtempSync(join(tmpdir(), "cursor-use-test-"));
   const store = makeReceiptStore(directory);
   const calls: Call[] = [];
-  const agents = new Map<string, { id: string; latestRunId: string; env: { type: string; name?: string } }>();
+  const agents = new Map<string, { id: string; latestRunId: string; env: { type: string; name?: string }; repos: Array<{ url: string; startingRef?: string }> }>();
   let account = 42;
   let dropLaunch = false;
   let dropFollowUp = false;
-  let runStatus = "FINISHED";
+  let followUpBusy = false;
+  let runGets = 0;
+  let runStatus: string | ((n: number) => string) = "FINISHED";
+  let runResult: string | null = "test result";
   let returnedEnvironment: string | undefined;
   const api: typeof CursorApi.Service = { events: () => Stream.die("Unexpected SSE request"), request: (method, path, body) => Effect.suspend((): Effect.Effect<unknown, Fault> => {
     calls.push({ method, path, body });
@@ -28,7 +32,8 @@ function fixture() {
     if (method === "POST" && path === "/v1/agents") {
       const payload = body as { agentId: string; env?: { name: string }; repos?: Array<{ url: string; startingRef?: string }> };
       const envName = returnedEnvironment ?? payload.env?.name;
-      const agent = { id: payload.agentId, latestRunId: "run-initial", env: { type: "cloud", ...(envName ? { name: envName } : {}) }, repos: payload.repos ?? [] };
+      const repos = payload.repos ?? (payload.env?.name ? [{ url: "https://github.com/example/attached" }] : []);
+      const agent = { id: payload.agentId, latestRunId: "run-initial", env: { type: "cloud", ...(envName ? { name: envName } : {}) }, repos };
       agents.set(agent.id, agent);
       return dropLaunch ? Effect.fail(new Fault({ code: "OUTCOME_UNKNOWN", message: "response lost", uncertain: true })) : Effect.succeed({ agent, run: { id: "run-initial", agentId: agent.id, status: "CREATING" } });
     }
@@ -36,14 +41,30 @@ function fixture() {
     if (method === "POST" && path.endsWith("/cancel")) return Effect.succeed({ id: path.split("/")[5] });
     if (path.includes("/usage")) return Effect.succeed({ runs: [], cost: { chargedCents: 0 } });
     if (path.endsWith("/artifacts")) return Effect.succeed({ items: [{ path: "artifacts/proof.txt", sizeBytes: 4 }] });
-    if (method === "POST" && path.endsWith("/runs")) return dropFollowUp ? Effect.fail(new Fault({ code: "OUTCOME_UNKNOWN", message: "response lost", uncertain: true })) : Effect.succeed({ run: { id: "run-followup", agentId, status: "CREATING" } });
-    if (path.includes("/runs/")) return Effect.succeed({ id: path.split("/")[5], agentId, status: runStatus, result: "test result", git: { branches: [] } });
+    if (method === "POST" && path.endsWith("/runs")) {
+      if (followUpBusy) return Effect.fail(new Fault({ code: "CONFLICT", message: "Agent is busy", status: 409, uncertain: false, providerCode: "agent_busy" }));
+      return dropFollowUp ? Effect.fail(new Fault({ code: "OUTCOME_UNKNOWN", message: "response lost", uncertain: true })) : Effect.succeed({ run: { id: "run-followup", agentId, status: "CREATING" } });
+    }
+    if (path.includes("/runs/")) {
+      runGets++;
+      const status = typeof runStatus === "function" ? runStatus(runGets) : runStatus;
+      return Effect.succeed({ id: path.split("/")[5], agentId, status, result: runResult, git: { branches: [] } });
+    }
     if (path.startsWith("/v1/agents?")) return Effect.succeed({ items: [...agents.values()].map(({ id }) => ({ id })), nextCursor: "another-page" });
     const agent = agents.get(agentId);
     return agent ? Effect.succeed(agent) : Effect.fail(new Fault({ code: "NOT_FOUND", message: "missing", status: 404, uncertain: false }));
   }) };
   const run = <A, E>(effect: Effect.Effect<A, E, CursorApi | ReceiptStore>) => Effect.runPromise(effect.pipe(Effect.provideService(CursorApi, api), Effect.provideService(ReceiptStore, store)));
-  return { directory, store, calls, agents, api, run, setAccount: (value: number) => { account = value; }, dropLaunch: () => { dropLaunch = true; }, dropFollowUp: () => { dropFollowUp = true; }, setStatus: (value: string) => { runStatus = value; }, setReturnedEnvironment: (value: string) => { returnedEnvironment = value; } };
+  return {
+    directory, store, calls, agents, api, run,
+    setAccount: (value: number) => { account = value; },
+    dropLaunch: () => { dropLaunch = true; },
+    dropFollowUp: () => { dropFollowUp = true; },
+    rejectFollowUpBusy: () => { followUpBusy = true; },
+    setStatus: (value: string | ((n: number) => string)) => { runStatus = value; },
+    setResult: (value: string | null) => { runResult = value; },
+    setReturnedEnvironment: (value: string) => { returnedEnvironment = value; },
+  };
 }
 
 const input = { env: "test-env", prompt: "Read only. Return a marker.", requestId: "test-request" };
@@ -139,7 +160,7 @@ test("only one database handle can claim a prepared request", async () => {
 
 test("wait reports execution completion without claiming task acceptance", async () => {
   const f = fixture();
-  expect(await f.run(waitRun("bc-example", "run-initial"))).toMatchObject({ run: { status: "FINISHED", result: "test result", git: { branches: [] } }, taskAccepted: false });
+  expect(await f.run(waitRun("bc-example", "run-initial"))).toMatchObject({ run: { status: "FINISHED", result: "test result", git: { branches: [] } }, taskAccepted: false, emptyResult: false, result: "test result" });
   f.setStatus("ERROR");
   const failed = await f.run(Effect.result(waitRun("bc-example", "run-initial")));
   expect(failed._tag).toBe("Failure");
@@ -167,7 +188,10 @@ test("environment observations stay partial and distinguish configured names", a
   await f.run(launch(input));
   const envs = await f.run(listEnvironments(true));
   expect(envs).toMatchObject({ complete: false, hasMoreAgents: true, scannedAgents: 1 });
-  expect(envs.items).toEqual(expect.arrayContaining([expect.objectContaining({ name: "user-choice", source: "configured" }), expect.objectContaining({ name: "test-env", source: "observed" })]));
+  expect(envs.items).toEqual(expect.arrayContaining([
+    expect.objectContaining({ name: "user-choice", source: "configured", repos: [] }),
+    expect.objectContaining({ name: "test-env", source: "observed", repos: [{ url: "https://github.com/example/attached" }] }),
+  ]));
   expect(await f.run(listAgents(20, "previous"))).toMatchObject({ complete: false });
 });
 
@@ -186,6 +210,8 @@ test("dry-run validates targets, hides the prompt and does not create a receipt"
   const preview = previewLaunch({ ...input, model: "test-model", modelParams: [{ id: "reasoning", value: "high" }] });
   expect(preview).toMatchObject({ dryRun: true, remoteValidated: false, receiptCreated: false, request: { model: { id: "test-model", params: [{ id: "reasoning", value: "high" }] }, autoCreatePR: false } });
   expect(JSON.stringify(preview)).not.toContain(input.prompt);
+  expect(preview.git).toMatchObject({ source: "named-environment-snapshot", repos: [], reposProvenance: "unavailable", promptDoesNotReplaceSnapshotRepos: true, envExclusiveOfRepoAndRef: true, requestIncludesRepos: false, authoritativeAfterLaunch: "agent.repos" });
+  expect(preview.request).not.toHaveProperty("repos");
   expect(preview.promptSha256).toHaveLength(64);
   expect(() => previewLaunch({ prompt: "p", env: "", scratch: true })).toThrow();
   expect(() => previewLaunch({ prompt: "p", env: "" })).toThrow();
@@ -258,7 +284,7 @@ test("cancel confirms the pair but does not claim the remote terminal state", as
 
 test("result summary labels latest selection, agent-scoped artifacts and independent acceptance", async () => {
   const f = fixture(); const created = await f.run(launch(input));
-  expect(await f.run(agentResult(created.receipt.agentId))).toMatchObject({ runSelection: "latest-observed", executionSucceeded: true, taskAccepted: false, artifactsScope: "agent", gitScope: "agent-snapshot" });
+  expect(await f.run(agentResult(created.receipt.agentId))).toMatchObject({ runSelection: "latest-observed", executionSucceeded: true, taskAccepted: false, emptyResult: false, result: "test result", artifactsScope: "agent", gitScope: "agent-snapshot" });
   expect(await f.run(agentResult(created.receipt.agentId, "run-explicit"))).toMatchObject({ runSelection: "explicit", run: { id: "run-explicit" } });
 });
 
@@ -289,11 +315,106 @@ test("paging cycles fail explicitly instead of looping or reporting an empty lis
 
 test("reconciliation does not invent missing target proof for legacy repository receipts", async () => {
   const f = fixture();
-  f.agents.set("bc-legacy", { id: "bc-legacy", latestRunId: "run-initial", env: { type: "cloud" } });
+  f.agents.set("bc-legacy", { id: "bc-legacy", latestRunId: "run-initial", env: { type: "cloud" }, repos: [] });
   await Effect.runPromise(f.store.prepare({ requestId: "legacy", operation: "launch", account: "42", fingerprint: "legacy", agentId: "bc-legacy", state: "unknown", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), target: "https://github.com/example/repo" }));
   const result = await f.run(reconcile("legacy").pipe(Effect.result));
   expect(result._tag).toBe("Failure");
   if (result._tag === "Failure") expect(result.failure.code).toBe("OUTCOME_UNKNOWN");
   expect((await Effect.runPromise(f.store.get("legacy"))).state).toBe("unknown");
   expect(f.calls.every(call => call.method === "GET")).toBe(true);
+});
+
+test("follow-up while RUNNING is never queued and includes a stable next step", async () => {
+  const f = fixture();
+  const first = await f.run(launch(input));
+  f.setStatus("RUNNING");
+  const busy = await f.run(Effect.result(followUp({ agentId: first.receipt.agentId, prompt: "Continue", requestId: "busy-follow" })));
+  expect(busy._tag).toBe("Failure");
+  if (busy._tag !== "Failure") throw new Error("Expected failure");
+  expect(busy.failure).toMatchObject({
+    code: "CONFLICT",
+    status: 409,
+    providerCode: "agent_busy",
+    nextStep: FOLLOW_UP_BUSY_NEXT_STEP,
+    details: { activeRunId: "run-initial", activeRunStatus: "RUNNING", followUpQueued: false, newRequestIdRequired: false, nextStep: FOLLOW_UP_BUSY_NEXT_STEP },
+  });
+  expect(f.calls.filter((call) => call.method === "POST")).toHaveLength(1);
+  const missing = await Effect.runPromise(Effect.result(f.store.get("busy-follow")));
+  expect(missing._tag).toBe("Failure");
+  f.setStatus("FINISHED");
+  const reused = await f.run(followUp({ agentId: first.receipt.agentId, prompt: "Continue", requestId: "busy-follow" }));
+  expect(reused).toMatchObject({ receipt: { runId: "run-followup", state: "submitted" } });
+  expect(f.calls.filter((call) => call.method === "POST")).toHaveLength(2);
+});
+
+test("follow-up --wait polls until idle then POSTs once", async () => {
+  const f = fixture();
+  const first = await f.run(launch(input));
+  f.setStatus((n) => n < 2 ? "RUNNING" : "FINISHED");
+  const follow = { agentId: first.receipt.agentId, prompt: "Continue after idle", requestId: "wait-follow", wait: true, timeoutSeconds: 5, intervalSeconds: 1 };
+  const value = await Effect.runPromise(Effect.gen(function* () {
+    const fiber = yield* Effect.forkChild(followUp(follow));
+    yield* TestClock.adjust("1 second");
+    yield* TestClock.adjust("1 second");
+    return yield* Fiber.join(fiber);
+  }).pipe(Effect.provideService(CursorApi, f.api), Effect.provideService(ReceiptStore, f.store), Effect.provide(TestClock.layer())));
+  expect(value).toMatchObject({ receipt: { requestId: "wait-follow", runId: "run-followup", state: "submitted" } });
+  expect(f.calls.filter((call) => call.method === "POST" && String(call.path).endsWith("/runs"))).toHaveLength(1);
+});
+
+test("a rejected busy follow-up POST requires a new request ID and is not retried", async () => {
+  const f = fixture();
+  const first = await f.run(launch(input));
+  f.rejectFollowUpBusy();
+  const follow = { agentId: first.receipt.agentId, prompt: "Continue", requestId: "race-busy" };
+  const busy = await f.run(Effect.result(followUp(follow)));
+  expect(busy._tag).toBe("Failure");
+  if (busy._tag !== "Failure") throw new Error("Expected failure");
+  expect(busy.failure).toMatchObject({
+    providerCode: "agent_busy",
+    nextStep: FOLLOW_UP_BUSY_NEXT_STEP,
+    details: { followUpQueued: false, newRequestIdRequired: true, nextStep: FOLLOW_UP_BUSY_NEXT_STEP },
+  });
+  expect(await Effect.runPromise(f.store.get("race-busy"))).toMatchObject({ state: "rejected" });
+  const replay = await f.run(Effect.result(followUp(follow)));
+  expect(replay._tag).toBe("Failure");
+  if (replay._tag !== "Failure") throw new Error("Expected failure");
+  expect(replay.failure.code).toBe("REQUEST_REJECTED");
+  expect(f.calls.filter((call) => call.method === "POST" && String(call.path).endsWith("/runs"))).toHaveLength(1);
+});
+
+test("envs show lists last-seen snapshot repos without treating observation as a catalog", async () => {
+  const f = fixture();
+  await f.run(addEnvironment("test-env"));
+  await f.run(launch(input));
+  const shown = await f.run(showEnvironment("test-env", true));
+  expect(shown).toMatchObject({
+    name: "test-env",
+    configured: true,
+    observed: true,
+    complete: false,
+    catalogAvailable: false,
+    reposProvenance: "observed-agent",
+    repos: [{ url: "https://github.com/example/attached" }],
+    git: { promptDoesNotReplaceSnapshotRepos: true, envExclusiveOfRepoAndRef: true, authoritativeAfterLaunch: "agent.repos" },
+  });
+  const unseen = await f.run(showEnvironment("missing-env"));
+  expect(unseen).toMatchObject({ exists: false, repos: [], reposProvenance: "unavailable", catalogAvailable: false });
+});
+
+test("empty result text is first-class and is not treated as accepted work", async () => {
+  const f = fixture();
+  const created = await f.run(launch(input));
+  f.setResult(null);
+  expect(await f.run(agentResult(created.receipt.agentId))).toMatchObject({
+    executionSucceeded: true,
+    taskAccepted: false,
+    emptyResult: true,
+    result: null,
+    run: { status: "FINISHED", result: null },
+  });
+  f.setResult("   ");
+  expect(await f.run(agentResult(created.receipt.agentId))).toMatchObject({ emptyResult: true, taskAccepted: false, result: "   " });
+  f.setResult("done");
+  expect(await f.run(agentResult(created.receipt.agentId))).toMatchObject({ emptyResult: false, result: "done", taskAccepted: false });
 });

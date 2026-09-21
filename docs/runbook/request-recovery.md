@@ -49,7 +49,7 @@ cursor-use receipts bind-run --request-id <原请求ID> --run-id <核对后的Ru
 
 ## 明确拒绝或等待超时
 
-- rejected 表示收到明确拒绝。解决输入、权限或忙碌原因后，新的逻辑尝试使用新的 request ID。不要反复修改同一个请求的含义。
+- rejected 表示收到明确拒绝。解决输入、权限或忙碌原因后，新的逻辑尝试使用新的 request ID。不要反复修改同一个请求的含义。忙碌续派从不排队；优先 `agents follow-up --wait`。若 POST 前预检为 busy，同一 request ID 仍可在空闲后使用；若回执已是 rejected，必须换新 ID。错误带 `nextStep=wait-then-new-request-id`、`activeRunId` 和 `followUpQueued=false`。
 - REQUEST_CONFLICT 表示同一 ID 的账号或任务内容不同。先检查旧回执，不覆盖它。
 - WAIT_TIMEOUT 只停止本地等待。继续调用 runs show 或 wait，不默认 cancel。
 - RECEIPT_UPDATE_FAILED 的错误带有远端 Agent/Run ID。先保存这些 ID，再排查磁盘和权限，不重新提交。

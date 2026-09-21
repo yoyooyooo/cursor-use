@@ -107,7 +107,7 @@ cursor-use/
 
 回执保存目标与 Run 归属来源，较弱观察和晚到超时不能覆盖已提交事实。SSE 不维护跨消费者共享游标；调用方保存事件 ID，每个消费者拥有自己的处理进度。目录翻页有页数上限、重复 cursor 检测和显式截断，不能视为原子快照。
 
-环境信息仍仅为配置名称和有界历史观察，原生 Projects 报 UNSUPPORTED。envVars beta 暂不接入，不牺牲提交恢复约束。skill 只引用已实现命令，不绕过这些边界。
+环境信息仍为配置名称、有界历史观察和 `envs show`。观察结果可带 last-seen `repos[]`，但公开 v1 没有 snapshot catalog。原生 Projects 报 UNSUPPORTED。envVars beta 暂不接入，不牺牲提交恢复约束。skill 只引用已实现命令，不绕过这些边界。
 
 ## 桌面实验边界
 

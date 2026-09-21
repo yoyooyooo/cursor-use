@@ -53,7 +53,7 @@ function readPrompt(args: { prompt: Option.Option<string>; promptFile: Option.Op
 const agents = Command.make("agents").pipe(Command.withSubcommands([
   Command.make("list", { limit, cursor, ...pageFlags, excludeArchived: Flag.boolean("exclude-archived"), prUrl: optionalString("pr-url") }, (args) => respond(operations.listAgents(args.limit, optional(args.cursor), { ...args, includeArchived: args.excludeArchived ? false : undefined, prUrl: optional(args.prUrl) }))),
   Command.make("show", { agentId: id }, (args) => respond(operations.getAgent(args.agentId))),
-  Command.make("result", { agentId: id, runId: optionalString("run-id") }, args => respond(operations.agentResult(args.agentId, optional(args.runId)))),
+  Command.make("result", { agentId: id, runId: optionalString("run-id") }, args => respond(operations.agentResult(args.agentId, optional(args.runId)))).pipe(Command.withDescription("Summarize Agent, Run, usage and artifacts. emptyResult is true when result text is missing; FINISHED is not task acceptance.")),
   Command.make("launch", {
     ...promptFlags,
     env: optionalString("env"), repo: optionalString("repo"), ref: optionalString("ref"),
@@ -71,10 +71,20 @@ const agents = Command.make("agents").pipe(Command.withSubcommands([
     const input = { prompt, env: optional(args.env), repo: optional(args.repo), ref: optional(args.ref), scratch: args.scratch, model, name: optional(args.name), autoPr: args.autoPr, mode: optional(args.mode), requestId: optional(args.requestId), modelParams: effectiveModelParams, repos };
     return yield* args.dryRun ? operations.validate(() => operations.previewLaunch(input)) : operations.launch(input);
   }))).pipe(Command.withDescription("Start a paid Cloud Agent. Saves a recovery receipt before submission.")),
-  Command.make("follow-up", { agentId: id, ...promptFlags, requestId: optionalString("request-id"), mode: optionalString("mode") }, (args) => respond(Effect.gen(function* () {
+  Command.make("follow-up", {
+    agentId: id, ...promptFlags, requestId: optionalString("request-id"), mode: optionalString("mode"),
+    wait: Flag.boolean("wait").pipe(Flag.withDescription("Wait until the agent is idle, then POST this follow-up once. Follow-up is never queued while busy.")),
+    timeout: waitTimeout, interval: waitInterval,
+  }, (args) => respond(Effect.gen(function* () {
     const prompt = yield* readPrompt(args);
-    return yield* operations.followUp({ agentId: args.agentId, prompt, requestId: optional(args.requestId), mode: optional(args.mode) });
-  }))),
+    const config = yield* loadUserConfig();
+    return yield* operations.followUp({
+      agentId: args.agentId, prompt, requestId: optional(args.requestId), mode: optional(args.mode),
+      wait: args.wait,
+      timeoutSeconds: optional(args.timeout) ?? config.wait?.timeoutSeconds ?? 600,
+      intervalSeconds: optional(args.interval) ?? config.wait?.intervalSeconds ?? 5,
+    });
+  }))).pipe(Command.withDescription("Create a paid follow-up run. Busy agents never queue; prefer --wait, or treat 409 agent_busy as wait then a new --request-id.")),
   Command.make("reconcile", { requestId: Flag.string("request-id") }, (args) => respond(operations.reconcile(args.requestId))),
 ]));
 
@@ -105,6 +115,7 @@ const receipts = Command.make("receipts").pipe(Command.withSubcommands([
 const environments = Command.make("envs").pipe(Command.withSubcommands([
   Command.make("add", { name: Flag.string("name") }, (args) => respond(operations.addEnvironment(args.name))),
   Command.make("list", { observed: Flag.boolean("observed"), limit, ...pageFlags }, (args) => respond(operations.listEnvironments(args.observed, args.limit, args))),
+  Command.make("show", { name: Flag.string("name"), observed: Flag.boolean("observed").pipe(Flag.withDescription("Include last-seen snapshot repos from matching agents. Not a complete catalog.")), limit, ...pageFlags }, (args) => respond(operations.showEnvironment(args.name, args.observed, args.limit, args))).pipe(Command.withDescription("Show one named environment. Public v1 has no snapshot catalog; --observed lists last-seen agent.repos.")),
 ]));
 
 const artifacts = Command.make("artifacts").pipe(Command.withSubcommands([
@@ -165,6 +176,6 @@ export const cli = Effect.gen(function* () {
     message: error === undefined ? "Unexpected CLI defect." : "Invalid command arguments.",
     details: error === undefined ? Cause.pretty(result.cause) : { diagnostics: diagnostics.flat().map(String) },
   });
-  yield* writeJson({ ok: false, error: { code: fault.code, message: fault.message, status: fault.status, uncertain: fault.uncertain, providerCode: fault.providerCode, retryAfterSeconds: fault.retryAfterSeconds, providerRequestId: fault.providerRequestId, details: fault.details } }, "stderr");
+  yield* writeJson({ ok: false, error: { code: fault.code, message: fault.message, status: fault.status, uncertain: fault.uncertain, providerCode: fault.providerCode, retryAfterSeconds: fault.retryAfterSeconds, providerRequestId: fault.providerRequestId, nextStep: fault.nextStep, details: fault.details } }, "stderr");
   return yield* Effect.fail(fault);
 });

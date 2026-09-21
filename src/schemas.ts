@@ -23,7 +23,7 @@ export const Run = Schema.Struct({
   id: Schema.String,
   agentId: Schema.String,
   status: Schema.String,
-  result: Schema.optional(Schema.String),
+  result: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 export const CreatedAgent = Schema.Struct({ agent: Agent, run: Run });
