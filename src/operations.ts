@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Clock, Effect, Schema } from "effect";
 import { CursorApi, type Method } from "./cursor-api.ts";
-import { assertInput, Fault, updateFault, validateAgentId, validateRunId } from "./errors.ts";
+import { assertInput, Fault, FOLLOW_UP_BUSY_NEXT_STEP, updateFault, validateAgentId, validateRunId } from "./errors.ts";
 import { ReceiptStore, type Receipt } from "./receipts.ts";
 import * as S from "./schemas.ts";
 import { launchBody, validatePrompt, validateRepository, type LaunchInput } from "./launch-input.ts";
@@ -28,8 +28,8 @@ export const repositories = () => request("GET", "/v1/repositories", S.Repositor
 
 export const capabilities = {
   provider: "Cursor Cloud Agents v1",
-  implemented: ["doctor", "models", "repos", "agents list/show/result/launch/follow-up/reconcile", "runs list/show/wait/stream/cancel", "receipts list/show/bind-run", "envs add/list", "usage", "artifacts list/url/download", "bounded pagination", "model parameters", "multiple repositories", "launch dry-run"],
-  environmentCatalog: { available: "partial", sources: ["configured", "observed"], complete: false },
+  implemented: ["doctor", "models", "repos", "agents list/show/result/launch/follow-up/reconcile", "runs list/show/wait/stream/cancel", "receipts list/show/bind-run", "envs add/list/show", "usage", "artifacts list/url/download", "bounded pagination", "model parameters", "multiple repositories", "launch dry-run", "follow-up wait"],
+  environmentCatalog: { available: "partial", sources: ["configured", "observed"], complete: false, snapshotRepos: "not in public v1 catalog; last-seen on matching agents via envs show --observed" },
   nativeProjects: { available: false, reason: "No verified public API for native Projects." },
   deferred: ["native Project operations", "full environment configuration directory", "envVars (beta may silently ignore values and conflicts with client agentId)"],
   outOfScope: ["desktop and terminal interoperability", "permanent deletion", "worker and pool administration", "inline MCP and custom subagents"],
@@ -213,24 +213,112 @@ export function launch(input: LaunchInput) {
   });
 }
 
-export function followUp(input: { agentId: string; prompt: string; requestId?: string | undefined; mode?: string | undefined }) {
+export type FollowUpInput = {
+  agentId: string;
+  prompt: string;
+  requestId?: string | undefined;
+  mode?: string | undefined;
+  wait?: boolean | undefined;
+  timeoutSeconds?: number | undefined;
+  intervalSeconds?: number | undefined;
+};
+
+type FollowUpReadiness = { agent: typeof S.Agent.Type; run?: typeof S.Run.Type; busy: boolean };
+
+function describeRunResult(result: string | null | undefined) {
+  const text = result === undefined ? null : result;
+  return { result: text, emptyResult: text === null || text.trim() === "" };
+}
+
+function followUpBusyFault(readiness: FollowUpReadiness, options: { newRequestIdRequired: boolean; cause?: Fault }) {
+  const cause = options.cause;
+  return new Fault({
+    code: cause?.code ?? "CONFLICT",
+    message: cause?.message ?? "Follow-up is not queued while the agent is busy. Wait until the active run is terminal, then submit with a new --request-id.",
+    status: cause?.status ?? 409,
+    uncertain: false,
+    providerCode: cause?.providerCode ?? "agent_busy",
+    providerRequestId: cause?.providerRequestId,
+    retryAfterSeconds: cause?.retryAfterSeconds,
+    nextStep: FOLLOW_UP_BUSY_NEXT_STEP,
+    details: {
+      activeRunId: readiness.run?.id ?? readiness.agent.latestRunId,
+      activeRunStatus: readiness.run?.status,
+      agentStatus: readiness.agent.status,
+      followUpQueued: false,
+      newRequestIdRequired: options.newRequestIdRequired,
+      nextStep: FOLLOW_UP_BUSY_NEXT_STEP,
+      ...(cause?.details ? { providerDetails: cause.details } : {}),
+    },
+  });
+}
+
+function inspectFollowUpReadiness(agent: typeof S.Agent.Type) {
+  return Effect.gen(function* () {
+    if (!agent.latestRunId) return { agent, busy: false } satisfies FollowUpReadiness;
+    const run = yield* getRun(agent.id, agent.latestRunId);
+    return { agent, run, busy: run.status === "CREATING" || run.status === "RUNNING" } satisfies FollowUpReadiness;
+  });
+}
+
+function boundedPoll<A, R>(timeoutSeconds: number, intervalSeconds: number, tick: () => Effect.Effect<{ readonly done: true; readonly value: A } | { readonly done: false }, Fault, R>, timeout: () => Fault) {
+  return Effect.gen(function* () {
+    yield* validate(() => {
+      assertInput(Number.isFinite(timeoutSeconds) && timeoutSeconds > 0 && timeoutSeconds <= 3600, "Timeout must be between 0 and 3600 seconds.");
+      assertInput(Number.isFinite(intervalSeconds) && intervalSeconds > 0 && intervalSeconds <= 60, "Interval must be between 0 and 60 seconds.");
+    });
+    const deadline = (yield* Clock.currentTimeMillis) + timeoutSeconds * 1000;
+    const timedOut = () => Effect.fail(timeout());
+    while (true) {
+      const budget = deadline - (yield* Clock.currentTimeMillis);
+      if (budget <= 0) return yield* timedOut();
+      const step = yield* tick().pipe(Effect.timeoutOrElse({ duration: budget, orElse: timedOut }));
+      if (step.done) return step.value;
+      const remaining = deadline - (yield* Clock.currentTimeMillis);
+      if (remaining <= 0) return yield* timedOut();
+      yield* Effect.sleep(Math.min(intervalSeconds * 1000, remaining));
+    }
+  });
+}
+
+function waitUntilFollowUpIdle(agentId: string, timeoutSeconds: number, intervalSeconds: number) {
+  return boundedPoll(timeoutSeconds, intervalSeconds, () => Effect.gen(function* () {
+    const readiness = yield* inspectFollowUpReadiness(yield* getAgent(agentId));
+    if (!readiness.busy) return { done: true as const, value: readiness };
+    if (readiness.run && readiness.run.status !== "CREATING" && readiness.run.status !== "RUNNING") {
+      return yield* Effect.fail(new Fault({ code: "PROVIDER_CONTRACT", message: `Unknown run status: ${readiness.run.status}`, details: { run: readiness.run } }));
+    }
+    return { done: false as const };
+  }), () => new Fault({ code: "WAIT_TIMEOUT", message: "Stopped waiting locally. The follow-up was not sent.", details: { agentId } }));
+}
+
+export function followUp(input: FollowUpInput) {
   return Effect.gen(function* () {
     yield* validate(() => {
       validateAgentId(input.agentId);
       validatePrompt(input.prompt);
       assertInput(input.mode === undefined || input.mode === "agent" || input.mode === "plan", "Mode must be agent or plan.");
+      if (input.wait) assertInput(input.timeoutSeconds !== undefined && input.intervalSeconds !== undefined, "--wait requires timeout and interval.");
     });
     const body = { prompt: { text: input.prompt }, ...(input.mode ? { mode: input.mode } : {}) };
     const me = yield* whoami();
     const candidate = yield* validate(() => newReceipt({ requestId: input.requestId, operation: "follow-up", account: String(me.userId), agentId: input.agentId, body }));
     const existing = yield* existingReceipt(candidate);
     if (existing && existing.state !== "prepared") return yield* reconcileReceipt(existing);
-    const agent = yield* getAgent(input.agentId);
+    const readiness = input.wait && input.timeoutSeconds !== undefined && input.intervalSeconds !== undefined
+      ? yield* waitUntilFollowUpIdle(input.agentId, input.timeoutSeconds, input.intervalSeconds)
+      : yield* inspectFollowUpReadiness(yield* getAgent(input.agentId));
+    if (readiness.busy) return yield* Effect.fail(followUpBusyFault(readiness, { newRequestIdRequired: false }));
     const store = yield* ReceiptStore;
-    const receipt = yield* store.prepare({ ...candidate, ...(agent.latestRunId ? { baselineRunId: agent.latestRunId } : {}) });
+    const receipt = yield* store.prepare({ ...candidate, ...(readiness.agent.latestRunId ? { baselineRunId: readiness.agent.latestRunId } : {}) });
     if (!(yield* store.claim(receipt.requestId))) return yield* reconcileReceipt(yield* store.get(receipt.requestId));
     return yield* saveOutcome(receipt, request("POST", `${agentPath(input.agentId)}/runs`, S.CreatedRun, body).pipe(
       Effect.flatMap((created) => created.run.agentId === input.agentId ? Effect.succeed(created) : Effect.fail(new Fault({ code: "PROVIDER_CONTRACT", message: "Cursor returned a run for another agent.", uncertain: true }))),
+      Effect.catchIf((error): error is Fault => error instanceof Fault && (error.providerCode === "agent_busy" || (error.status === 409 && error.providerCode === "agent_busy")), (error) => Effect.gen(function* () {
+        const current = yield* Effect.result(inspectFollowUpReadiness(yield* getAgent(input.agentId)));
+        const latest = current._tag === "Success" ? current.success : readiness;
+        return yield* Effect.fail(followUpBusyFault(latest, { newRequestIdRequired: true, cause: error }));
+      })),
     ));
   });
 }
@@ -266,24 +354,15 @@ export function bindRun(requestId: string, runId: string, confirmed: boolean) {
 const terminal = new Set(["FINISHED", "ERROR", "CANCELLED", "EXPIRED"]);
 
 export function waitRun(agentId: string, runId: string, timeoutSeconds = 600, intervalSeconds = 5) {
-  return Effect.gen(function* () {
-    yield* validate(() => { assertInput(Number.isFinite(timeoutSeconds) && timeoutSeconds > 0 && timeoutSeconds <= 3600, "Timeout must be between 0 and 3600 seconds."); assertInput(Number.isFinite(intervalSeconds) && intervalSeconds > 0 && intervalSeconds <= 60, "Interval must be between 0 and 60 seconds."); });
-    const deadline = (yield* Clock.currentTimeMillis) + timeoutSeconds * 1000;
-    const timeout = () => Effect.fail(new Fault({ code: "WAIT_TIMEOUT", message: "Stopped waiting locally. The cloud run was not cancelled.", details: { agentId, runId } }));
-    while (true) {
-      const budget = deadline - (yield* Clock.currentTimeMillis);
-      if (budget <= 0) return yield* timeout();
-      const run = yield* getRun(agentId, runId).pipe(Effect.timeoutOrElse({ duration: budget, orElse: timeout }));
-      if (terminal.has(run.status)) {
-        if (run.status !== "FINISHED") return yield* Effect.fail(new Fault({ code: "RUN_UNSUCCESSFUL", message: `Run ended with ${run.status}.`, details: { run } }));
-        return { run, taskAccepted: false, note: "FINISHED is an execution result, not independent task acceptance." };
-      }
-      if (run.status !== "CREATING" && run.status !== "RUNNING") return yield* Effect.fail(new Fault({ code: "PROVIDER_CONTRACT", message: `Unknown run status: ${run.status}`, details: { run } }));
-      const remaining = deadline - (yield* Clock.currentTimeMillis);
-      if (remaining <= 0) return yield* timeout();
-      yield* Effect.sleep(Math.min(intervalSeconds * 1000, remaining));
+  return boundedPoll(timeoutSeconds, intervalSeconds, () => Effect.gen(function* () {
+    const run = yield* getRun(agentId, runId);
+    if (terminal.has(run.status)) {
+      if (run.status !== "FINISHED") return yield* Effect.fail(new Fault({ code: "RUN_UNSUCCESSFUL", message: `Run ended with ${run.status}.`, details: { run } }));
+      return { done: true as const, value: { run, ...describeRunResult(run.result), taskAccepted: false, note: "FINISHED is an execution result, not independent task acceptance." } };
     }
-  });
+    if (run.status !== "CREATING" && run.status !== "RUNNING") return yield* Effect.fail(new Fault({ code: "PROVIDER_CONTRACT", message: `Unknown run status: ${run.status}`, details: { run } }));
+    return { done: false as const };
+  }), () => new Fault({ code: "WAIT_TIMEOUT", message: "Stopped waiting locally. The cloud run was not cancelled.", details: { agentId, runId } }));
 }
 
 export function cancelRun(agentId: string, runId: string) {
@@ -320,11 +399,17 @@ export function addEnvironment(name: string) {
   });
 }
 
+type EnvRepo = { url: string; startingRef?: string | undefined };
+
+function copyRepos(repos: ReadonlyArray<{ readonly url: string; readonly startingRef?: string | undefined }> | undefined): EnvRepo[] {
+  return (repos ?? []).map((repo) => repo.startingRef === undefined ? { url: repo.url } : { url: repo.url, startingRef: repo.startingRef });
+}
+
 export function listEnvironments(observe = false, limit = 20, options: PageOptions = {}) {
   return Effect.gen(function* () {
     const store = yield* ReceiptStore;
-    const configured = (yield* store.environments()).map((item) => ({ ...item, type: "cloud", source: "configured" }));
-    const observed: Array<{ name: string; type: string; source: "observed"; agentIds: string[] }> = [];
+    const configured = (yield* store.environments()).map((item) => ({ ...item, type: "cloud", source: "configured" as const, repos: [] as EnvRepo[] }));
+    const observed: Array<{ name: string; type: string; source: "observed"; agentIds: string[]; repos: EnvRepo[] }> = [];
     let scannedAgents = 0;
     let hasMoreAgents = false;
     if (observe) {
@@ -336,10 +421,41 @@ export function listEnvironments(observe = false, limit = 20, options: PageOptio
         if (!agent.env?.name) continue;
         const existing = observed.find((env) => env.type === agent.env!.type && env.name === agent.env!.name);
         if (existing) existing.agentIds.push(agent.id);
-        else observed.push({ name: agent.env.name, type: agent.env.type, source: "observed", agentIds: [agent.id] });
+        else observed.push({ name: agent.env.name, type: agent.env.type, source: "observed", agentIds: [agent.id], repos: copyRepos(agent.repos) });
       }
     }
-    return { items: [...configured, ...observed], complete: false, observedAt: new Date().toISOString(), scannedAgents, hasMoreAgents, note: "Configured and observed names are not a complete provider environment catalog." };
+    return { items: [...configured, ...observed], complete: false, catalogAvailable: false, observedAt: new Date().toISOString(), scannedAgents, hasMoreAgents, note: "Configured and observed names are not a complete provider environment catalog. Snapshot repos are not listed by public v1; --observed shows last-seen agent.repos." };
+  });
+}
+
+export function showEnvironment(name: string, observe = false, limit = 20, options: PageOptions = {}) {
+  return Effect.gen(function* () {
+    yield* validate(() => assertInput(name.trim() === name && name.length > 0 && name.length <= 200, "Use a non-empty exact environment name."));
+    const listing = yield* listEnvironments(observe, limit, options);
+    const configured = listing.items.find((item) => item.source === "configured" && item.name === name);
+    const matched = listing.items.find((item) => item.source === "observed" && item.name === name);
+    const repos = matched?.repos ?? [];
+    return {
+      name,
+      type: "cloud",
+      configured: Boolean(configured),
+      observed: Boolean(matched),
+      exists: Boolean(configured || matched),
+      complete: false,
+      catalogAvailable: false,
+      repos,
+      reposProvenance: matched ? "observed-agent" as const : configured ? "configured" as const : "unavailable" as const,
+      scannedAgents: listing.scannedAgents,
+      hasMoreAgents: listing.hasMoreAgents,
+      agentIds: matched && "agentIds" in matched ? matched.agentIds : [],
+      git: {
+        source: "named-environment-snapshot",
+        promptDoesNotReplaceSnapshotRepos: true,
+        envExclusiveOfRepoAndRef: true,
+        authoritativeAfterLaunch: "agent.repos",
+      },
+      note: "Public v1 has no environment snapshot catalog. --env cannot combine with --repo/--ref. Prompt clone URLs do not replace snapshot git. After launch, agent.repos is the git the cloud used. --observed lists last-seen repos from matching agents and is incomplete.",
+    };
   });
 }
 
@@ -348,7 +464,17 @@ export function agentResult(agentId: string, runId?: string) {
     const agent = yield* getAgent(agentId);
     const selected = runId ?? agent.latestRunId;
     if (!selected) return yield* Effect.fail(new Fault({ code: "NOT_FOUND", message: "This agent has no known run yet." }));
-    const result = yield* Effect.all({ run: getRun(agentId, selected), usage: usage(agentId, selected), artifacts: artifacts(agentId) }, { concurrency: 2 });
-    return { agent, ...result, runSelection: runId ? "explicit" : "latest-observed", terminal: terminal.has(result.run.status), executionSucceeded: result.run.status === "FINISHED", taskAccepted: false, artifactsScope: "agent", gitScope: "agent-snapshot" };
+    const collected = yield* Effect.all({ run: getRun(agentId, selected), usage: usage(agentId, selected), artifacts: artifacts(agentId) }, { concurrency: 2 });
+    const described = describeRunResult(collected.run.result);
+    return {
+      agent, ...collected, ...described,
+      runSelection: runId ? "explicit" : "latest-observed",
+      terminal: terminal.has(collected.run.status),
+      executionSucceeded: collected.run.status === "FINISHED",
+      taskAccepted: false,
+      artifactsScope: "agent",
+      gitScope: "agent-snapshot",
+      note: described.emptyResult ? "FINISHED with missing result text is not accepted work." : "FINISHED is an execution result, not independent task acceptance.",
+    };
   });
 }

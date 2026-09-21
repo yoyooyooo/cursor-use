@@ -117,5 +117,52 @@ for (const entrypoint of ["src/main.ts", "dist/main.js"]) {
       expect(result.stdout).not.toContain("private test prompt");
       expect(result.stderr).toBe("");
     });
+
+    test("env dry-run surfaces snapshot git limits without combining --repo", async () => {
+      const result = await invoke(entrypoint, ["agents", "launch", "--env", "common", "--prompt", "private env prompt", "--dry-run", "--json"]);
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        ok: true,
+        data: {
+          dryRun: true,
+          remoteValidated: false,
+          request: { env: { type: "cloud", name: "common" } },
+          git: {
+            source: "named-environment-snapshot",
+            repos: [],
+            reposProvenance: "unavailable",
+            requestIncludesRepos: false,
+            promptDoesNotReplaceSnapshotRepos: true,
+            envExclusiveOfRepoAndRef: true,
+            authoritativeAfterLaunch: "agent.repos",
+          },
+        },
+      });
+      expect(JSON.parse(result.stdout).data.request.repos).toBeUndefined();
+      expect(result.stdout).not.toContain("private env prompt");
+      const combined = await invoke(entrypoint, ["agents", "launch", "--env", "common", "--repo", "https://github.com/example/repo", "--prompt", "no", "--dry-run", "--json"]);
+      expect(combined.exitCode).toBe(1);
+      expect(JSON.parse(combined.stderr).error.code).toBe("INVALID_INPUT");
+    });
+
+    test("follow-up, result and envs show help describe the lived recovery holes", async () => {
+      const follow = await invoke(entrypoint, ["agents", "follow-up", "--help"]);
+      expect(follow.exitCode).toBe(0);
+      expect(follow.stdout).toContain("--wait");
+      expect(follow.stdout.toLowerCase()).toContain("busy");
+      const result = await invoke(entrypoint, ["agents", "result", "--help"]);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("emptyResult");
+      const envs = await invoke(entrypoint, ["envs", "show", "--help"]);
+      expect(envs.exitCode).toBe(0);
+      expect(envs.stdout).toContain("--name");
+      expect(envs.stdout).toContain("--observed");
+      const shown = await invoke(entrypoint, ["envs", "show", "--name", "common", "--json"]);
+      expect(shown.exitCode).toBe(0);
+      expect(JSON.parse(shown.stdout)).toMatchObject({
+        ok: true,
+        data: { name: "common", catalogAvailable: false, reposProvenance: "unavailable", git: { promptDoesNotReplaceSnapshotRepos: true } },
+      });
+    });
   });
 }

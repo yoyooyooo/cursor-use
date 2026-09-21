@@ -64,7 +64,52 @@ export function launchBody(input: LaunchInput): Record<string, unknown> {
   };
 }
 
+export type LaunchGitPreview = {
+  readonly source: "named-environment-snapshot" | "explicit-repos" | "scratch";
+  readonly repos: ReadonlyArray<RepositoryInput>;
+  readonly reposProvenance: "request" | "unavailable";
+  readonly requestIncludesRepos: boolean;
+  readonly promptDoesNotReplaceSnapshotRepos: boolean;
+  readonly envExclusiveOfRepoAndRef: boolean;
+  readonly inspectWith: ReadonlyArray<string>;
+  readonly authoritativeAfterLaunch: string;
+};
+
+export function launchGitPreview(input: LaunchInput, request: Record<string, unknown>): LaunchGitPreview {
+  if (input.env) {
+    return {
+      source: "named-environment-snapshot",
+      repos: [],
+      reposProvenance: "unavailable",
+      requestIncludesRepos: false,
+      promptDoesNotReplaceSnapshotRepos: true,
+      envExclusiveOfRepoAndRef: true,
+      inspectWith: [`envs show --name ${input.env} --observed --json`, "agents show / launch response field repos"],
+      authoritativeAfterLaunch: "agent.repos",
+    };
+  }
+  const repos = Array.isArray(request.repos) ? request.repos as ReadonlyArray<RepositoryInput> : [];
+  return {
+    source: input.scratch ? "scratch" : "explicit-repos",
+    repos,
+    reposProvenance: "request",
+    requestIncludesRepos: repos.length > 0,
+    promptDoesNotReplaceSnapshotRepos: true,
+    envExclusiveOfRepoAndRef: true,
+    inspectWith: ["agents show / launch response field repos"],
+    authoritativeAfterLaunch: "agent.repos",
+  };
+}
+
 export function previewLaunch(input: LaunchInput) {
   const { prompt: _, ...request } = launchBody(input);
-  return { dryRun: true, remoteValidated: false, receiptCreated: false, request, promptBytes: Buffer.byteLength(input.prompt), promptSha256: createHash("sha256").update(input.prompt).digest("hex") };
+  return {
+    dryRun: true,
+    remoteValidated: false,
+    receiptCreated: false,
+    request,
+    git: launchGitPreview(input, request),
+    promptBytes: Buffer.byteLength(input.prompt),
+    promptSha256: createHash("sha256").update(input.prompt).digest("hex"),
+  };
 }

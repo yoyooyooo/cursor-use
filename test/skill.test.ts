@@ -10,3 +10,15 @@ test("the shipped skill has parseable discovery metadata", async () => {
   expect(metadata.description).toContain("Cloud Agents");
   expect(metadata.description.length).toBeGreaterThan(80);
 });
+
+test("the skill matches shipped busy follow-up, env git and empty-result behavior", async () => {
+  const text = await Bun.file(new URL("../skills/cursor-use/SKILL.md", import.meta.url)).text();
+  expect(text).toContain("agents follow-up");
+  expect(text).toContain("--wait");
+  expect(text).toContain("wait-then-new-request-id");
+  expect(text).toContain("never queued");
+  expect(text).toContain("emptyResult");
+  expect(text).toContain("envs show");
+  expect(text).toContain("prompt clone URLs do not replace");
+  expect(text).toContain("agent.repos");
+});

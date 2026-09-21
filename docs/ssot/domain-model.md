@@ -23,7 +23,7 @@
 - `FINISHED` 表示该轮执行结束，不自动证明用户验收通过。
 - 错误、取消或过期属于不同结果，不能统一输出为完成成功。
 - Agent 的 `IDLE` 只表示可接受续派，也可能出现在可恢复错误之后。
-- 同一 Agent 同时只能有一个活跃 Run；`409 agent_busy` 需要等待或显式取消，不能靠盲目重试解决。
+- 同一 Agent 同时只能有一个活跃 Run；`409 agent_busy` 表示续派没有入队。需要等待现有 Run 结束或显式取消后再提交；被拒绝的 request ID 不能静默重用。`--wait` 只在本地等到空闲后 POST 一次。
 - 本地 wait 超时或 CLI 退出只代表停止本地观察，不代表云端任务取消。
 
 ## 数据来源与完整性
@@ -45,7 +45,7 @@
 3. `envVars` 与客户端 `agentId` 互斥。需要 envVars 的模式不能宣称同等防重复保证，须单独设计恢复后再开放。
 4. 未验证服务端幂等支持的 follow-up，不自动重发。记录为结果未知并提供回查路径。
 5. 本地回执支持并发安全与重启恢复，不靠静默丢弃旧记录维持存储上限；云端读回仍是执行状态依据。
-6. named cloud environment 与显式 repos 按官方契约互斥，不为方便而组合非法参数。
+6. named cloud environment 与显式 repos 按官方契约互斥，不为方便而组合非法参数。prompt 文本不能替换 snapshot 仓库；launch/`agents show` 的 `repos` 是云端实际使用的 git。公开 v1 没有环境 snapshot catalog，`envs show --observed` 只是匹配 Agent 上的 last-seen `repos[]`。
 7. 指定 ref 时保留准确值；省略表示使用提供方默认值，不由 CLI 猜测 main，也不把未提交本地文件当作云端可见上下文。
 
 回执中的 Run 归属须区分 confirmed、latest-observed 和 operator-selected。后两者分别是观察与人工确认，不是服务端对原始提交的关联证明；较弱来源和晚到错误不能覆盖已经确认的事实。旧回执缺失字段时不自动补造证明。

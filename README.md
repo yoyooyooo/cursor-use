@@ -96,10 +96,12 @@ Save `agentId` and `runId` from the receipt, then wait, stream, or continue:
 ```sh
 cursor-use runs wait --agent-id <bc-id> --run-id <run-id> --json
 cursor-use agents result --agent-id <bc-id> --run-id <run-id> --json
-cursor-use agents follow-up --agent-id <bc-id> --prompt "Add the missing edge case." --request-id my-task-002 --json
+cursor-use agents follow-up --agent-id <bc-id> --prompt "Add the missing edge case." --request-id my-task-002 --wait --json
 ```
 
-`FINISHED` means the run ended. It is not task acceptance. Check the result, git snapshot, artifacts, and your own criteria.
+`FINISHED` means the run ended. It is not task acceptance. Check `emptyResult`, the result text, git snapshot, artifacts, and your own criteria. Follow-up while a run is busy is never queued; prefer `--wait`, or wait and use a new `--request-id` after a rejected receipt.
+
+Named `--env` does not combine with `--repo` or `--ref`. Prompt clone URLs do not replace snapshot git. Inspect `envs show --name <env> --observed --json` and the launch/`agents show` `repos` field.
 
 ## Configuration
 
@@ -128,6 +130,7 @@ To let another coding agent operate this CLI, install or link [skills/cursor-use
 - No desktop CDP, `cursor-agent`, or terminal-to-desktop control
 - No automatic merge
 - Environment observation is bounded and can be incomplete
+- Named environment snapshot repos are not in the public v1 catalog; last-seen `repos[]` come from matching agents
 - Provider git metadata is an Agent-level snapshot, not proof of a specific run's commits
 
 ## Documentation
